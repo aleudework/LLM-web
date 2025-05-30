@@ -27,15 +27,22 @@ def search_web(query: str) -> str:
 
     snippet = "\n\n".join(content_list[:2])
     print(f"[TOOL] Returnerer snippet på {len(snippet)} tegn")
+    
+    # Skriv snippet til fil
+    with open("snippet.txt", "w", encoding="utf-8") as f:
+        f.write(snippet)
+        print("[TOOL] Skrev snippet til snippet.txt")
+    
     return snippet
 
 def chat_with_llm(question: str):
     print(f"[MAIN] Bruger spørger: {question}")
     messages = [{"role": "user", "content": question}]
 
+    # Første kald: lad LLM beslutte om den vil bruge search_web
     print("[MAIN] Sender til LLM med tools=[search_web]")
     response = ollama.chat(
-        model="llama3.2",
+        model="llama3.3",
         messages=messages,
         tools=[search_web]
     )
@@ -44,14 +51,14 @@ def chat_with_llm(question: str):
     if tool_calls:
         call = tool_calls[0]
         name = call.function.name
-        args = call.function.arguments  # allerede et dict
+        args = call.function.arguments
         tool_id = str(uuid.uuid4())
         print(f"[MAIN] LLM vil kalde tool: {name} med args {args}")
 
-        # Udfør værktøjet
+        # Udfør værktøjet og skriv snippet til fil (gøres i search_web)
         result = search_web(**args)
 
-        # Append assistant-besked der viser modelens tool-call
+        # Byg assistant-tool_call-besked
         messages.append({
             "role": "assistant",
             "content": None,
@@ -61,13 +68,12 @@ def chat_with_llm(question: str):
                     "type": "function",
                     "function": {
                         "name": name,
-                        "arguments": args   # <— et dict, ikke en string
+                        "arguments": args
                     }
                 }
             ]
         })
-
-        # Append tool-svaret
+        # Byg tool-svar
         messages.append({
             "role": "tool",
             "tool_call_id": tool_id,
@@ -75,9 +81,15 @@ def chat_with_llm(question: str):
             "content": result
         })
 
+        # Skriv hele prompten til fil til inspektion
+        with open("final_prompt.txt", "w", encoding="utf-8") as f:
+            json.dump(messages, f, ensure_ascii=False, indent=2)
+            print("[MAIN] Skrev prompt-beskeder til final_prompt.txt")
+
+        # Andet kald: generér endeligt svar
         print("[MAIN] Sender tool-output tilbage til LLM for endeligt svar")
         final_response = ollama.chat(
-            model="llama3.2",
+            model="llama3.3",
             messages=messages
         )
         answer = final_response.message.content
